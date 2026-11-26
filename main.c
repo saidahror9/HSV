@@ -116,10 +116,6 @@ void button_hold_tick(void)
             val_step = 1;
         }
     }
-    else
-    {
-        return;
-    }
 
     led2_set_hsv(hue, sat, val);
 }
