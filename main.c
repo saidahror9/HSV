@@ -1,128 +1,149 @@
-/**
- * Copyright (c) 2014 - 2021, Nordic Semiconductor ASA
- *
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without modification,
- * are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice, this
- *    list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form, except as embedded into a Nordic
- *    Semiconductor ASA integrated circuit in a product or a software update for
- *    such product, must reproduce the above copyright notice, this list of
- *    conditions and the following disclaimer in the documentation and/or other
- *    materials provided with the distribution.
- *
- * 3. Neither the name of Nordic Semiconductor ASA nor the names of its
- *    contributors may be used to endorse or promote products derived from this
- *    software without specific prior written permission.
- *
- * 4. This software, with or without modification, must only be used with a
- *    Nordic Semiconductor ASA integrated circuit.
- *
- * 5. Any software provided in binary form under this license must not be reverse
- *    engineered, decompiled, modified and/or disassembled.
- *
- * THIS SOFTWARE IS PROVIDED BY NORDIC SEMICONDUCTOR ASA "AS IS" AND ANY EXPRESS
- * OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
- * OF MERCHANTABILITY, NONINFRINGEMENT, AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL NORDIC SEMICONDUCTOR ASA OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
- * GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
- * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- */
-/** @file
- *
- * @defgroup blinky_example_main main.c
- * @{
- * @ingroup blinky_example
- * @brief Blinky Example Application main file.
- *
- * This file contains the source code for a sample application to blink LEDs.
- *
- */
-
-#include <stdbool.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include "nrf_delay.h"
-#include "nrf_gpio.h"
+#include "app_timer.h"
+#include "app_error.h"
+#include "nrf_log.h"
+#include "log.h"
+#include "pwm.h"
+#include "hsv.h"
+#include "button.h"
 
-#define LED1_G NRF_GPIO_PIN_MAP(0, 6)
-#define LED2_R NRF_GPIO_PIN_MAP(0, 8)
-#define LED2_G NRF_GPIO_PIN_MAP(1, 9)
-#define LED2_B NRF_GPIO_PIN_MAP(0, 12)
+#define DEFAULT_HUE (98 * 360 / 100)
 
-#define BUTTON_1 NRF_GPIO_PIN_MAP(1, 6)
+// int id[4] = {7, 1, 9, 8}
 
-#define LED_COUNT 4
+#define MODE_NONE 0
+#define MODE_HUE 1
+#define MODE_SAT 2
+#define MODE_VAL 3
 
-#define button_pressed 0
+#define SLOW_BLINK_MS 500
+#define FAST_BLINK_MS 100
 
-static const uint32_t leds[LED_COUNT] = {LED1_G, LED2_R, LED2_G, LED2_B};
+APP_TIMER_DEF(blink_timer);
 
-void led_init(void)
+int mode = MODE_NONE;
+int hue = DEFAULT_HUE;
+int sat = 100;
+int val = 100;
+int sat_step = -1;
+int val_step = -1;
+bool led1_on = false;
+
+void blink_done(void *p_context)
 {
-    for (int i = 0; i < LED_COUNT; i++)
+    led1_on = !led1_on;
+    if (led1_on)
     {
-        nrf_gpio_cfg_output(leds[i]);
-        nrf_gpio_pin_write(leds[i], 1);
+        pwm_set_led1(255);
+    }
+    else
+    {
+        pwm_set_led1(0);
     }
 }
 
-void button_init(void)
+void led1_show_mode(void)
 {
-    nrf_gpio_cfg_input(BUTTON_1, NRF_GPIO_PIN_PULLUP);
-}
+    app_timer_stop(blink_timer);
+    led1_on = false;
 
-void led_on(int i)
-{
-    nrf_gpio_pin_write(leds[i], 0);
-}
-
-void led_off(int i)
-{
-    nrf_gpio_pin_write(leds[i], 1);
-}
-
-void wait_pressed(int ms)
-{
-    int waited = 0;
-    while (waited < ms)
+    if (mode == MODE_NONE)
     {
-        if (nrf_gpio_pin_read(BUTTON_1) == button_pressed)
+        pwm_set_led1(0);
+    }
+    else if (mode == MODE_HUE)
+    {
+        app_timer_start(blink_timer, APP_TIMER_TICKS(SLOW_BLINK_MS), NULL);
+    }
+    else if (mode == MODE_SAT)
+    {
+        app_timer_start(blink_timer, APP_TIMER_TICKS(FAST_BLINK_MS), NULL);
+    }
+    else
+    {
+        pwm_set_led1(255);
+    }
+}
+
+void button_double_click(void)
+{
+    mode++;
+    if (mode > MODE_VAL)
+    {
+        mode = MODE_NONE;
+    }
+    NRF_LOG_INFO("mode %d", mode);
+    led1_show_mode();
+}
+
+void button_hold_tick(void)
+{
+    if (mode == MODE_HUE)
+    {
+        hue++;
+        if (hue >= 360)
         {
-            waited += 10;
+            hue = 0;
         }
-        nrf_delay_ms(10);
     }
+    else if (mode == MODE_SAT)
+    {
+        sat = sat + sat_step;
+        if (sat >= 100)
+        {
+            sat = 100;
+            sat_step = -1;
+        }
+        if (sat <= 0)
+        {
+            sat = 0;
+            sat_step = 1;
+        }
+    }
+    else if (mode == MODE_VAL)
+    {
+        val = val + val_step;
+        if (val >= 100)
+        {
+            val = 100;
+            val_step = -1;
+        }
+        if (val <= 0)
+        {
+            val = 0;
+            val_step = 1;
+        }
+    }
+    else
+    {
+        return;
+    }
+
+    led2_set_hsv(hue, sat, val);
 }
 
 int main(void)
 {
+    logs_init();
 
-    led_init();
+    ret_code_t err = app_timer_init();
+    APP_ERROR_CHECK(err);
+    err = app_timer_create(&blink_timer, APP_TIMER_MODE_REPEATED, blink_done);
+    APP_ERROR_CHECK(err);
+
+    pwm_init();
+    led2_set_hsv(hue, sat, val);
+    led1_show_mode();
+
     button_init();
 
-    int board_Id[] = {7, 1, 9, 8};
+    NRF_LOG_INFO("HSV picker started");
 
     while (true)
     {
-
-        for (int i = 0; i < LED_COUNT; i++)
-        {
-            for (int j = 0; j < board_Id[i]; j++)
-            {
-                wait_pressed(500);
-                led_on(i);
-                wait_pressed(500);
-                led_off(i);
-            }
-        }
+        logs_process();
+        nrf_delay_ms(1);
     }
 }
