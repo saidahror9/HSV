@@ -135,7 +135,7 @@ int main(void)
 
     button_init();
 
-    NRF_LOG_INFO("HSV picker started");
+    NRF_LOG_INFO("Началась");
 
     while (true)
     {
