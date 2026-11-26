@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include "pwm.h"
 #include "hsv.h"
+#include "nrf_log.h"
 
 void led2_set_hsv(uint16_t h, uint8_t s, uint8_t v)
 {
@@ -51,6 +52,8 @@ void led2_set_hsv(uint16_t h, uint8_t s, uint8_t v)
     g = low;
     b = down;
   }
+
+  NRF_LOG_INFO("h:%d s:%d v:%d", h, s, v);
 
   pwm_set_rgb(r, g, b);
 }

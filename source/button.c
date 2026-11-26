@@ -27,7 +27,10 @@ void debounce_done(void *p_context)
   if (now_pressed && !pressed)
   {
     pressed = true;
-    app_timer_start(hold_delay_timer, APP_TIMER_TICKS(HOLD_DELAY_MS), NULL);
+    if (clicks == 0)
+    {
+      app_timer_start(hold_delay_timer, APP_TIMER_TICKS(HOLD_DELAY_MS), NULL);
+    }
   }
   else if (!now_pressed && pressed)
   {
